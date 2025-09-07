@@ -12,6 +12,7 @@ constexpr int BROADCAST_INTERVAL = 3;
 NetworkManager::NetworkManager(int port) : port(port), running(false) {
     // Генерируем уникальный ID узла (PID + random)
     nodeId = "NODE_" + std::to_string(getpid()) + "_" + std::to_string(rand());
+    broadcastAddress = "192.168.1.255";
 }
 
 NetworkManager::~NetworkManager() {
@@ -48,7 +49,7 @@ void NetworkManager::broadcaster() {
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    addr.sin_addr.s_addr = inet_addr(broadcastAddress.c_str());
 
     while (running) {
         std::string msg = "ALIVE:" + nodeId;

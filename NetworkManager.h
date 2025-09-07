@@ -15,6 +15,9 @@ public:
 
     std::set<std::string> getKnownNodes();
 
+protected:
+    std::string broadcastAddress;
+
 private:
     void broadcaster();
     void listener();
