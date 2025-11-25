@@ -239,23 +239,46 @@ void FileTransfer::control_loop() {
             std::string filename(name_len, '\0');
             if (recv(client, &filename[0], name_len, MSG_WAITALL) != (ssize_t)name_len) { ::close(client); continue; }
 
-            bool accept = true;
-            // Try to prompt the local user via /dev/tty
-            FILE* tty = fopen("/dev/tty", "r+");
-            if (tty) {
-                fprintf(tty, "Incoming file request from %s: %s. Accept? [y/N]: ", inet_ntoa(peer.sin_addr), filename.c_str());
-                fflush(tty);
-                int ch = fgetc(tty);
-                if (ch != 'y' && ch != 'Y') accept = false;
-                fclose(tty);
-            } else {
-                // no tty available, default to auto-accept
-                accept = true;
+            // create pending request and notify main thread
+            char ipbuf[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &peer.sin_addr, ipbuf, sizeof(ipbuf));
+            auto req = std::make_shared<PendingRequest>(std::string(ipbuf), filename);
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex_);
+                pending_.push_back(req);
+            }
+            pending_cv_.notify_one();
+
+            // wait for decision with timeout (30s)
+            int waited = 0;
+            const int step = 100;
+            while (req->decision.load() == -1 && waited < 30000) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(step));
+                waited += step;
             }
 
-            uint8_t resp = accept ? MessageCodec::MSG_FILE_ACCEPT : MessageCodec::MSG_FILE_REJECT;
+            uint8_t resp = MessageCodec::MSG_FILE_REJECT;
+            int d = req->decision.load();
+            if (d == 1) resp = MessageCodec::MSG_FILE_ACCEPT;
+            // if still -1 or 0 -> reject
             send(client, &resp, sizeof(resp), 0);
         }
         ::close(client);
     }
+}
+
+std::vector<std::shared_ptr<PendingRequest>> FileTransfer::get_pending_requests() {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    return pending_;
+}
+
+bool FileTransfer::decide_request(const std::string& peer_ip, const std::string& filename, bool accept) {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    for (auto& p : pending_) {
+        if (p->peer_ip == peer_ip && p->filename == filename) {
+            p->decision.store(accept ? 1 : 0);
+            return true;
+        }
+    }
+    return false;
 }

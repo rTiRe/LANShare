@@ -60,6 +60,17 @@ int main(int argc, char* argv[]) {
     // simple interactive loop: list devices and allow sending a file
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        // handle incoming file requests
+        auto pending = ft.get_pending_requests();
+        for (auto& req : pending) {
+            if (req->decision.load() != -1) continue; // already decided
+            std::cout << "Incoming file request from " << req->peer_ip << ": " << req->filename << ". Accept? [y/N]: ";
+            std::string ans;
+            std::getline(std::cin, ans);
+            bool accept = (!ans.empty() && (ans[0] == 'y' || ans[0] == 'Y'));
+            ft.decide_request(req->peer_ip, req->filename, accept);
+        }
+
         auto devices = listener.get_devices();
         std::cout << "\n--- Active devices ---\n";
         for (const auto& [ip, info] : devices) {
@@ -78,7 +89,7 @@ int main(int argc, char* argv[]) {
         if (path.empty()) continue;
 
         std::cout << "Requesting transfer to " << target << "...\n";
-        if (!ft.request_send(target, 40003, path)) {
+    if (!ft.request_send(target, 40003, path, 30000)) {
             std::cout << "Request denied or timed out.\n";
             continue;
         }
