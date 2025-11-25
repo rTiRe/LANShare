@@ -66,25 +66,36 @@ void SubnetListener::listen_loop() {
             break;
         }
 
-        // We'll treat the first byte as the message code. If more bytes arrive, ignore extras.
+        // First byte is message code. If there are extra bytes, treat them as sender-provided hostname.
         uint8_t code = static_cast<uint8_t>(buffer[0]);
 
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &sender.sin_addr, ip_str, sizeof(ip_str));
         std::string ip = ip_str;
 
-        // Получаем hostname
-        char host[NI_MAXHOST];
-        if (getnameinfo(reinterpret_cast<struct sockaddr*>(&sender), sender_len,
-                        host, sizeof(host), nullptr, 0, NI_NAMEREQD) != 0) {
-            std::strcpy(host, "unknown");
+        std::string payload_hostname;
+        if (bytes > 1) {
+            // payload bytes after the first byte represent hostname (no validation currently)
+            payload_hostname.assign(reinterpret_cast<char*>(buffer + 1), bytes - 1);
         }
 
-    DeviceInfo info;
-    info.ip = ip;
-    info.hostname = host;
-    info.lastMessage = code;
-    info.lastSeen = std::chrono::steady_clock::now();
+        // Получаем hostname via reverse lookup only if payload didn't include it
+        char hostbuf[NI_MAXHOST];
+        if (payload_hostname.empty()) {
+            if (getnameinfo(reinterpret_cast<struct sockaddr*>(&sender), sender_len,
+                            hostbuf, sizeof(hostbuf), nullptr, 0, NI_NAMEREQD) != 0) {
+                std::strcpy(hostbuf, "unknown");
+            }
+        } else {
+            std::strncpy(hostbuf, payload_hostname.c_str(), sizeof(hostbuf) - 1);
+            hostbuf[sizeof(hostbuf) - 1] = '\0';
+        }
+
+        DeviceInfo info;
+        info.ip = ip;
+        info.hostname = hostbuf;
+        info.lastMessage = code;
+        info.lastSeen = std::chrono::steady_clock::now();
 
         {
             std::lock_guard<std::mutex> lock(devices_mutex_);
@@ -93,7 +104,7 @@ void SubnetListener::listen_loop() {
 
     std::cout << "[RECV] code=" << static_cast<int>(code)
           << " (" << MessageCodec::name_for(code) << ") from " << ip
-          << " (" << host << ")" << std::endl;
+          << " (" << hostbuf << ")" << std::endl;
     }
 }
 

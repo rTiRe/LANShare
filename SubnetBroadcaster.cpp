@@ -10,7 +10,7 @@
 #include "MessageCodec.hpp"
 
 SubnetBroadcaster::SubnetBroadcaster(unsigned int interval_ms, uint16_t port)
-    : interval_ms_(interval_ms), port_(port), running_(false), sockfd_(-1), alive_msg_(MessageCodec::MSG_ALIVE), shutdown_msg_(MessageCodec::MSG_SHUTDOWN) {}
+    : interval_ms_(interval_ms), port_(port), running_(false), sockfd_(-1), alive_msg_(MessageCodec::MSG_ALIVE), shutdown_msg_(MessageCodec::MSG_SHUTDOWN), include_hostname_(true) {}
 
 SubnetBroadcaster::~SubnetBroadcaster() {
     stop();
@@ -53,7 +53,7 @@ bool SubnetBroadcaster::init(const std::string& if_name) {
     return true;
 }
 
-bool SubnetBroadcaster::start(uint8_t alive_msg, uint8_t shutdown_msg) {
+bool SubnetBroadcaster::start(uint8_t alive_msg, uint8_t shutdown_msg, bool include_hostname) {
     if (sockfd_ < 0) {
         std::cerr << "Socket not initialized. Call init() first.\n";
         return false;
@@ -64,6 +64,11 @@ bool SubnetBroadcaster::start(uint8_t alive_msg, uint8_t shutdown_msg) {
     }
     alive_msg_ = alive_msg;
     shutdown_msg_ = shutdown_msg;
+    include_hostname_ = include_hostname;
+
+    // resolve local hostname once
+    char hn[256] = {0};
+    if (gethostname(hn, sizeof(hn)) == 0) hostname_ = hn;
 
     worker_ = std::thread(&SubnetBroadcaster::run_loop, this);
     return true;
@@ -79,12 +84,24 @@ void SubnetBroadcaster::stop() {
     }
 }
 
-bool SubnetBroadcaster::send_now(uint8_t code) {
+bool SubnetBroadcaster::send_now(uint8_t code, const std::string& payload) {
     if (sockfd_ < 0) return false;
-    uint8_t buf = code;
-    ssize_t r = sendto(sockfd_, &buf, sizeof(buf), 0,
+    if (payload.empty()) {
+        uint8_t buf = code;
+        ssize_t r = sendto(sockfd_, &buf, sizeof(buf), 0,
+                           reinterpret_cast<struct sockaddr*>(&dest_), sizeof(dest_));
+        return r == (ssize_t)sizeof(buf);
+    }
+
+    // build buffer: 1 byte code + payload bytes
+    std::string out;
+    out.reserve(1 + payload.size());
+    out.push_back(static_cast<char>(code));
+    out.append(payload.data(), payload.size());
+
+    ssize_t r = sendto(sockfd_, out.data(), out.size(), 0,
                        reinterpret_cast<struct sockaddr*>(&dest_), sizeof(dest_));
-    return r == (ssize_t)sizeof(buf);
+    return r == (ssize_t)out.size();
 }
 
 std::string SubnetBroadcaster::broadcast_address() const { return broadcast_addr_; }
@@ -92,8 +109,14 @@ uint16_t SubnetBroadcaster::port() const { return port_; }
 
 void SubnetBroadcaster::run_loop() {
     while (running_.load()) {
-        if (!send_now(alive_msg_)) {
-            std::cerr << "Failed to send alive message\n";
+        if (include_hostname_) {
+            if (!send_now(alive_msg_, hostname_)) {
+                std::cerr << "Failed to send alive message\n";
+            }
+        } else {
+            if (!send_now(alive_msg_, std::string())) {
+                std::cerr << "Failed to send alive message\n";
+            }
         }
         unsigned int waited = 0;
         const unsigned int step = 50;
@@ -104,8 +127,14 @@ void SubnetBroadcaster::run_loop() {
     }
     // send shutdown code if set (0xFF reserved to mean "no shutdown")
     if (shutdown_msg_ != 0xFF) {
-        if (!send_now(shutdown_msg_)) {
-            std::cerr << "Failed to send shutdown message\n";
+        if (include_hostname_) {
+            if (!send_now(shutdown_msg_, hostname_)) {
+                std::cerr << "Failed to send shutdown message\n";
+            }
+        } else {
+            if (!send_now(shutdown_msg_, std::string())) {
+                std::cerr << "Failed to send shutdown message\n";
+            }
         }
     }
 }
