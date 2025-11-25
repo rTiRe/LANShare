@@ -102,9 +102,9 @@ void SubnetListener::listen_loop() {
             devices_[ip] = info;
         }
 
-    std::cout << "[RECV] code=" << static_cast<int>(code)
+    /* std::cout << "[RECV] code=" << static_cast<int>(code)
           << " (" << MessageCodec::name_for(code) << ") from " << ip
-          << " (" << hostbuf << ")" << std::endl;
+          << " (" << hostbuf << ")" << std::endl; */
     }
 }
 

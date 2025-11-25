@@ -1,6 +1,7 @@
 #include "SubnetBroadcaster.hpp"
 #include "SubnetListener.hpp"
 #include "MessageCodec.hpp"
+#include "FileTransfer.hpp"
 #include <iostream>
 #include <thread>
 #include <csignal>
@@ -31,6 +32,12 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
+    FileTransfer ft(40001);
+    if (!ft.start_receiver()) {
+        std::cerr << "File receiver failed to start\n";
+        // continue anyway
+    }
+
     g_broadcaster = &bc;
     g_listener = &listener;
     std::signal(SIGINT, sigint_handler);
@@ -40,13 +47,31 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Broadcasting and listening on port 40000.\n";
 
+    // simple interactive loop: list devices and allow sending a file
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(10));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         auto devices = listener.get_devices();
         std::cout << "\n--- Active devices ---\n";
         for (const auto& [ip, info] : devices) {
-            std::cout << info.ip << " (" << info.hostname << ") - last message: code="
-                      << static_cast<int>(info.lastMessage) << " (" << MessageCodec::name_for(info.lastMessage) << ")" << std::endl;
+            std::cout << ip << " (" << info.hostname << ") - last: " << MessageCodec::name_for(info.lastMessage)
+                      << " [code=" << static_cast<int>(info.lastMessage) << "]" << std::endl;
+        }
+
+        std::cout << "\nEnter target IP (or empty to refresh): ";
+        std::string target;
+        std::getline(std::cin, target);
+        if (target.empty()) continue;
+
+        std::cout << "Enter path to file to send: ";
+        std::string path;
+        std::getline(std::cin, path);
+        if (path.empty()) continue;
+
+        std::cout << "Sending " << path << " to " << target << "...\n";
+        if (ft.send_file(target, 40001, path)) {
+            std::cout << "Send complete.\n";
+        } else {
+            std::cout << "Send failed.\n";
         }
     }
 }

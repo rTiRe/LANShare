@@ -1,6 +1,6 @@
 CXX = g++
 CXXFLAGS = -std=c++17 -O2 -Wall -pthread
-OBJS = main.o SubnetBroadcaster.o SubnetListener.o
+OBJS = main.o SubnetBroadcaster.o SubnetListener.o FileTransfer.o
 TARGET = netdemo
 
 all: $(TARGET)
@@ -16,6 +16,9 @@ SubnetBroadcaster.o: SubnetBroadcaster.cpp SubnetBroadcaster.hpp
 
 SubnetListener.o: SubnetListener.cpp SubnetListener.hpp
 	$(CXX) $(CXXFLAGS) -c SubnetListener.cpp
+
+FileTransfer.o: FileTransfer.cpp FileTransfer.hpp
+	$(CXX) $(CXXFLAGS) -c FileTransfer.cpp
 
 clean:
 	rm -f $(OBJS) $(TARGET)
