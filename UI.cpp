@@ -98,22 +98,26 @@ void UI::handle_input() {
         return;
     }
 
-    // accept first pending
+    // accept first undecided pending
     if (ch == 'a' || ch == 'A') {
         auto pending = ft_.get_pending_requests();
-        if (!pending.empty()) {
-            auto p = pending.front();
-            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, true);
+        for (auto& p : pending) {
+            if (p->decision.load() == -1) {
+                ft_.decide_request(p->peer_ip, p->filename, true);
+                break;
+            }
         }
         return;
     }
 
-    // reject first pending
+    // reject first undecided pending
     if (ch == 'r' || ch == 'R') {
         auto pending = ft_.get_pending_requests();
-        if (!pending.empty()) {
-            auto p = pending.front();
-            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, false);
+        for (auto& p : pending) {
+            if (p->decision.load() == -1) {
+                ft_.decide_request(p->peer_ip, p->filename, false);
+                break;
+            }
         }
         return;
     }
