@@ -10,6 +10,7 @@
 #include <cstring>
 #include <sys/stat.h>
 #include <chrono>
+#include "MessageCodec.hpp"
 
 FileTransfer::FileTransfer(uint16_t listen_port)
     : listen_port_(listen_port), sockfd_(-1), running_(false) {}
@@ -106,6 +107,29 @@ bool FileTransfer::send_file(const std::string& remote_ip, uint16_t port, const 
 
     ::close(s);
     return true;
+}
+
+bool FileTransfer::send_shutdown(const std::string& remote_ip, uint16_t port) {
+    int s = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return false;
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    if (inet_pton(AF_INET, remote_ip.c_str(), &addr.sin_addr) != 1) {
+        ::close(s);
+        return false;
+    }
+
+    if (connect(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        ::close(s);
+        return false;
+    }
+
+    uint8_t code = MessageCodec::MSG_SHUTDOWN;
+    ssize_t r = send(s, &code, sizeof(code), 0);
+    ::close(s);
+    return r == (ssize_t)sizeof(code);
 }
 
 void FileTransfer::receiver_loop() {

@@ -14,6 +14,8 @@ public:
 
     // Blocking send of a file to remote_ip:port. Returns true on success.
     bool send_file(const std::string& remote_ip, uint16_t port, const std::string& filepath);
+    // send a single-byte shutdown message via TCP to remote host
+    bool send_shutdown(const std::string& remote_ip, uint16_t port = 40002);
 
 private:
     uint16_t listen_port_;

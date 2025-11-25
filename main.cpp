@@ -8,9 +8,18 @@
 
 static SubnetBroadcaster* g_broadcaster = nullptr;
 static SubnetListener* g_listener = nullptr;
+static FileTransfer* g_filetransfer = nullptr;
 
 void sigint_handler(int) {
     std::cerr << "\nStopping...\n";
+    // Try to send TCP shutdown to known devices first
+    if (g_filetransfer && g_listener) {
+        auto devices = g_listener->get_devices();
+        for (const auto& [ip, info] : devices) {
+            g_filetransfer->send_shutdown(ip);
+        }
+    }
+
     if (g_broadcaster) g_broadcaster->stop();
     if (g_listener) g_listener->stop();
     std::_Exit(0);
@@ -40,6 +49,7 @@ int main(int argc, char* argv[]) {
 
     g_broadcaster = &bc;
     g_listener = &listener;
+    g_filetransfer = &ft;
     std::signal(SIGINT, sigint_handler);
     std::signal(SIGTERM, sigint_handler);
 
