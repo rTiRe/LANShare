@@ -77,7 +77,13 @@ int main(int argc, char* argv[]) {
         std::getline(std::cin, path);
         if (path.empty()) continue;
 
-        std::cout << "Sending " << path << " to " << target << "...\n";
+        std::cout << "Requesting transfer to " << target << "...\n";
+        if (!ft.request_send(target, 40003, path)) {
+            std::cout << "Request denied or timed out.\n";
+            continue;
+        }
+
+        std::cout << "Request accepted — sending " << path << " to " << target << "...\n";
         if (ft.send_file(target, 40001, path)) {
             std::cout << "Send complete.\n";
         } else {
