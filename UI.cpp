@@ -41,7 +41,7 @@ void UI::draw() {
         mvprintw(prow + i, 0, "%2zu) %s  %s  [%s]", i + 1, p->peer_ip.c_str(), p->filename.c_str(), state);
     }
 
-    mvprintw(LINES - 2, 0, "Commands: q=quit, s=send file, 1/2/... accept pending request");
+    mvprintw(LINES - 2, 0, "Commands: q=quit, s=send file, 1/2/... accept pending request, a<num>=accept, r<num>=reject, x=reject all");
     refresh();
 }
 
@@ -106,6 +106,45 @@ void UI::handle_input() {
             auto p = pending[idx];
             ft_.decide_request(p->peer_ip, p->filename, true);
         }
+        return;
+    }
+
+    // accept/reject with multi-digit index: 'a' or 'r' followed by number and Enter
+    static std::string numbuf;
+    if (ch == 'a' || ch == 'r') {
+        numbuf.clear();
+        nodelay(stdscr, FALSE);
+        echo();
+        mvprintw(LINES - 4, 0, "Enter index to %s: ", (ch == 'a') ? "accept" : "reject");
+        int c;
+        // read digits until newline
+        while ((c = getch()) != '\n' && c != ERR) {
+            if (c >= '0' && c <= '9') {
+                numbuf.push_back((char)c);
+                addch(c);
+                refresh();
+            }
+        }
+        noecho();
+        nodelay(stdscr, TRUE);
+        if (!numbuf.empty()) {
+            int idx = std::stoi(numbuf) - 1;
+            auto pending = ft_.get_pending_requests();
+            if (idx >= 0 && (size_t)idx < pending.size()) {
+                auto p = pending[idx];
+                ft_.decide_request(p->peer_ip, p->filename, ch == 'a');
+            }
+        }
+        return;
+    }
+
+    // reject all pending
+    if (ch == 'x' || ch == 'X') {
+        auto pending = ft_.get_pending_requests();
+        for (auto& p : pending) {
+            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, false);
+        }
+        return;
     }
 }
 
