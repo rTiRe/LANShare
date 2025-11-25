@@ -329,3 +329,11 @@ bool FileTransfer::decide_request(const std::string& peer_ip, const std::string&
     }
     return false;
 }
+
+bool FileTransfer::decide_request_by_index(size_t index, bool accept) {
+    std::lock_guard<std::mutex> lock(pending_mutex_);
+    if (index >= pending_.size()) return false;
+    auto& p = pending_[index];
+    p->decision.store(accept ? 1 : 0);
+    return true;
+}

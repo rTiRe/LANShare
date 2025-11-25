@@ -34,6 +34,8 @@ public:
     std::vector<std::shared_ptr<PendingRequest>> get_pending_requests();
     // main thread calls this to decide a pending request; returns true if found and set
     bool decide_request(const std::string& peer_ip, const std::string& filename, bool accept);
+    // decide by index into pending list (0-based)
+    bool decide_request_by_index(size_t index, bool accept);
 
 private:
     uint16_t listen_port_;

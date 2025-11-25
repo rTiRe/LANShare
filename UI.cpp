@@ -101,9 +101,9 @@ void UI::handle_input() {
     // accept first undecided pending
     if (ch == 'a' || ch == 'A') {
         auto pending = ft_.get_pending_requests();
-        for (auto& p : pending) {
-            if (p->decision.load() == -1) {
-                ft_.decide_request(p->peer_ip, p->filename, true);
+        for (size_t i = 0; i < pending.size(); ++i) {
+            if (pending[i]->decision.load() == -1) {
+                ft_.decide_request_by_index(i, true);
                 break;
             }
         }
@@ -113,9 +113,9 @@ void UI::handle_input() {
     // reject first undecided pending
     if (ch == 'r' || ch == 'R') {
         auto pending = ft_.get_pending_requests();
-        for (auto& p : pending) {
-            if (p->decision.load() == -1) {
-                ft_.decide_request(p->peer_ip, p->filename, false);
+        for (size_t i = 0; i < pending.size(); ++i) {
+            if (pending[i]->decision.load() == -1) {
+                ft_.decide_request_by_index(i, false);
                 break;
             }
         }
@@ -139,8 +139,7 @@ void UI::handle_input() {
             int idx = std::stoi(s.substr(pos)) - 1;
             auto pending = ft_.get_pending_requests();
             if (idx >= 0 && (size_t)idx < pending.size()) {
-                auto p = pending[idx];
-                ft_.decide_request(p->peer_ip, p->filename, accept);
+                ft_.decide_request_by_index((size_t)idx, accept);
             }
         }
         return;
@@ -149,8 +148,8 @@ void UI::handle_input() {
     // reject all pending
     if (ch == 'x' || ch == 'X') {
         auto pending = ft_.get_pending_requests();
-        for (auto& p : pending) {
-            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, false);
+        for (size_t i = 0; i < pending.size(); ++i) {
+            if (pending[i]->decision.load() == -1) ft_.decide_request_by_index(i, false);
         }
         return;
     }
