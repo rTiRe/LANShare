@@ -78,7 +78,8 @@ bool FileTransfer::request_send(const std::string& remote_ip, uint16_t control_p
     // set connect timeout via non-blocking connect
     int flags = fcntl(s, F_GETFL, 0);
     fcntl(s, F_SETFL, flags | O_NONBLOCK);
-    connect(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    int res = connect(s, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    if (res < 0 && errno != EINPROGRESS) { ::close(s); return false; }
     fd_set wf;
     struct timeval tv;
     FD_ZERO(&wf);
@@ -86,6 +87,15 @@ bool FileTransfer::request_send(const std::string& remote_ip, uint16_t control_p
     tv.tv_sec = timeout_ms / 1000;
     tv.tv_usec = (timeout_ms % 1000) * 1000;
     if (select(s + 1, nullptr, &wf, nullptr, &tv) <= 0) { ::close(s); return false; }
+    // check connect result
+    int soerr = 0;
+    socklen_t len = sizeof(soerr);
+    if (getsockopt(s, SOL_SOCKET, SO_ERROR, &soerr, &len) < 0 || soerr != 0) {
+        ::close(s);
+        return false;
+    }
+    // restore flags (make socket blocking again)
+    fcntl(s, F_SETFL, flags & ~O_NONBLOCK);
     // send request: code + filename length + filename
     uint8_t code = MessageCodec::MSG_FILE_REQUEST;
     if (send(s, &code, sizeof(code), 0) != sizeof(code)) { ::close(s); return false; }
@@ -239,7 +249,7 @@ void FileTransfer::control_loop() {
             std::string filename(name_len, '\0');
             if (recv(client, &filename[0], name_len, MSG_WAITALL) != (ssize_t)name_len) { ::close(client); continue; }
 
-            // create pending request and notify main thread
+            // enqueue pending request for main thread to handle
             char ipbuf[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &peer.sin_addr, ipbuf, sizeof(ipbuf));
             auto req = std::make_shared<PendingRequest>(std::string(ipbuf), filename);

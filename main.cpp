@@ -2,27 +2,20 @@
 #include "SubnetListener.hpp"
 #include "MessageCodec.hpp"
 #include "FileTransfer.hpp"
+#include "UI.hpp"
 #include <iostream>
 #include <thread>
 #include <csignal>
+#include <atomic>
 
 static SubnetBroadcaster* g_broadcaster = nullptr;
 static SubnetListener* g_listener = nullptr;
 static FileTransfer* g_filetransfer = nullptr;
+static std::atomic<bool> g_terminate(false);
 
+// Signal handler sets a flag only (async-signal-safe)
 void sigint_handler(int) {
-    std::cerr << "\nStopping...\n";
-    // Try to send TCP shutdown to known devices first
-    if (g_filetransfer && g_listener) {
-        auto devices = g_listener->get_devices();
-        for (const auto& [ip, info] : devices) {
-            g_filetransfer->send_shutdown(ip);
-        }
-    }
-
-    if (g_broadcaster) g_broadcaster->stop();
-    if (g_listener) g_listener->stop();
-    std::_Exit(0);
+    g_terminate.store(true);
 }
 
 int main(int argc, char* argv[]) {
@@ -55,50 +48,29 @@ int main(int argc, char* argv[]) {
 
     bc.start(MessageCodec::MSG_ALIVE, MessageCodec::MSG_SHUTDOWN);
 
-    std::cout << "Broadcasting and listening on port 40000.\n";
+    std::cout << "Broadcasting and listening on port 40000. Starting UI...\n";
+    // start ncurses UI
+    UI ui(listener, ft, bc);
+    if (!ui.init()) {
+        std::cerr << "UI init failed, falling back to console mode\n";
+    } else {
+        ui.run();
+    }
 
-    // simple interactive loop: list devices and allow sending a file
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        // handle incoming file requests
-        auto pending = ft.get_pending_requests();
-        for (auto& req : pending) {
-            if (req->decision.load() != -1) continue; // already decided
-            std::cout << "Incoming file request from " << req->peer_ip << ": " << req->filename << ". Accept? [y/N]: ";
-            std::string ans;
-            std::getline(std::cin, ans);
-            bool accept = (!ans.empty() && (ans[0] == 'y' || ans[0] == 'Y'));
-            ft.decide_request(req->peer_ip, req->filename, accept);
-        }
-
-        auto devices = listener.get_devices();
-        std::cout << "\n--- Active devices ---\n";
-        for (const auto& [ip, info] : devices) {
-            std::cout << ip << " (" << info.hostname << ") - last: " << MessageCodec::name_for(info.lastMessage)
-                      << " [code=" << static_cast<int>(info.lastMessage) << "]" << std::endl;
-        }
-
-        std::cout << "\nEnter target IP (or empty to refresh): ";
-        std::string target;
-        std::getline(std::cin, target);
-        if (target.empty()) continue;
-
-        std::cout << "Enter path to file to send: ";
-        std::string path;
-        std::getline(std::cin, path);
-        if (path.empty()) continue;
-
-        std::cout << "Requesting transfer to " << target << "...\n";
-    if (!ft.request_send(target, 40003, path, 30000)) {
-            std::cout << "Request denied or timed out.\n";
-            continue;
-        }
-
-        std::cout << "Request accepted — sending " << path << " to " << target << "...\n";
-        if (ft.send_file(target, 40001, path)) {
-            std::cout << "Send complete.\n";
-        } else {
-            std::cout << "Send failed.\n";
+    // if termination requested, attempt to notify peers
+    if (g_terminate.load()) {
+        std::cerr << "\nStopping... sending shutdown to peers\n";
+        if (g_filetransfer && g_listener) {
+            auto devices = g_listener->get_devices();
+            for (const auto& [ip, info] : devices) {
+                g_filetransfer->send_shutdown(ip);
+            }
         }
     }
+
+    // clean shutdown
+    if (g_broadcaster) g_broadcaster->stop();
+    if (g_listener) g_listener->stop();
+    if (g_filetransfer) g_filetransfer->stop_receiver();
+    return 0;
 }
