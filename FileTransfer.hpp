@@ -43,6 +43,10 @@ private:
     // control server
     int control_sockfd_;
     uint16_t control_port_;
+public:
+    // accessors for actual ports (may differ if fallback ephemeral port was used)
+    uint16_t listen_port() const { return listen_port_; }
+    uint16_t control_port() const { return control_port_; }
     std::thread control_worker_;
 
     std::mutex pending_mutex_;

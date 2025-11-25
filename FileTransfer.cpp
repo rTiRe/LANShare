@@ -22,7 +22,10 @@ FileTransfer::~FileTransfer() {
 bool FileTransfer::start_receiver() {
     if (running_) return true;
     sockfd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd_ < 0) return false;
+    if (sockfd_ < 0) {
+        perror("FileTransfer: socket");
+        return false;
+    }
 
     int on = 1;
     setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
@@ -33,12 +36,26 @@ bool FileTransfer::start_receiver() {
     addr.sin_port = htons(listen_port_);
 
     if (bind(sockfd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-        ::close(sockfd_);
-        sockfd_ = -1;
-        return false;
+        perror("FileTransfer: bind (preferred)");
+        // try ephemeral port
+        addr.sin_port = htons(0);
+        if (bind(sockfd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+            perror("FileTransfer: bind (ephemeral)");
+            ::close(sockfd_);
+            sockfd_ = -1;
+            return false;
+        } else {
+            // retrieve assigned port
+            struct sockaddr_in actual{};
+            socklen_t alen = sizeof(actual);
+            if (getsockname(sockfd_, reinterpret_cast<struct sockaddr*>(&actual), &alen) == 0) {
+                listen_port_ = ntohs(actual.sin_port);
+            }
+        }
     }
 
     if (listen(sockfd_, 4) < 0) {
+        perror("FileTransfer: listen");
         ::close(sockfd_);
         sockfd_ = -1;
         return false;
@@ -221,7 +238,10 @@ void FileTransfer::receiver_loop() {
 
 void FileTransfer::control_loop() {
     control_sockfd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (control_sockfd_ < 0) return;
+    if (control_sockfd_ < 0) {
+        perror("Control: socket");
+        return;
+    }
     int on = 1;
     setsockopt(control_sockfd_, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
     struct sockaddr_in addr{};
@@ -229,11 +249,28 @@ void FileTransfer::control_loop() {
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(control_port_);
     if (bind(control_sockfd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        perror("Control: bind (preferred)");
+        // try ephemeral control port
+        addr.sin_port = htons(0);
+        if (bind(control_sockfd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+            perror("Control: bind (ephemeral)");
+            ::close(control_sockfd_);
+            control_sockfd_ = -1;
+            return;
+        } else {
+            struct sockaddr_in actual{};
+            socklen_t alen = sizeof(actual);
+            if (getsockname(control_sockfd_, reinterpret_cast<struct sockaddr*>(&actual), &alen) == 0) {
+                control_port_ = ntohs(actual.sin_port);
+            }
+        }
+    }
+    if (listen(control_sockfd_, 4) < 0) {
+        perror("Control: listen");
         ::close(control_sockfd_);
         control_sockfd_ = -1;
         return;
     }
-    if (listen(control_sockfd_, 4) < 0) { ::close(control_sockfd_); control_sockfd_ = -1; return; }
 
     while (running_) {
         struct sockaddr_in peer{};

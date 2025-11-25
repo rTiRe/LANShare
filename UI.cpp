@@ -79,15 +79,16 @@ void UI::handle_input() {
         std::string ip = ipbuf;
         std::string path = pathbuf;
         if (!ip.empty() && !path.empty()) {
-            mvprintw(LINES - 5, 0, "Requesting transfer to %s...", ip.c_str());
+            uint16_t ctrl = ft_.control_port();
+            mvprintw(LINES - 5, 0, "Requesting transfer to %s (control port %u)...", ip.c_str(), ctrl);
             refresh();
-            bool ok = ft_.request_send(ip, 40003, path, 30000);
+            bool ok = ft_.request_send(ip, ctrl, path, 30000);
             if (!ok) {
                 mvprintw(LINES - 5, 0, "Request denied or timed out.                         ");
             } else {
                 mvprintw(LINES - 5, 0, "Request accepted — sending...                       ");
                 refresh();
-                bool sent = ft_.send_file(ip, 40001, path);
+                bool sent = ft_.send_file(ip, ft_.listen_port(), path);
                 if (sent) mvprintw(LINES - 5, 0, "Send complete.                                     ");
                 else mvprintw(LINES - 5, 0, "Send failed.                                       ");
             }
