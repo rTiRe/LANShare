@@ -54,20 +54,20 @@ void SubnetListener::stop() {
 }
 
 void SubnetListener::listen_loop() {
-    char buffer[1024];
+    uint8_t buffer[1024];
     struct sockaddr_in sender{};
     socklen_t sender_len = sizeof(sender);
 
     while (running_.load()) {
-        ssize_t bytes = recvfrom(sockfd_, buffer, sizeof(buffer) - 1, 0,
+        ssize_t bytes = recvfrom(sockfd_, buffer, sizeof(buffer), 0,
                                  reinterpret_cast<struct sockaddr*>(&sender), &sender_len);
         if (bytes <= 0) {
             if (running_.load()) perror("recvfrom");
             break;
         }
 
-        buffer[bytes] = '\0';
-        std::string msg(buffer);
+        // We'll treat the first byte as the message code. If more bytes arrive, ignore extras.
+        uint8_t code = static_cast<uint8_t>(buffer[0]);
 
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &sender.sin_addr, ip_str, sizeof(ip_str));
@@ -80,19 +80,20 @@ void SubnetListener::listen_loop() {
             std::strcpy(host, "unknown");
         }
 
-        DeviceInfo info;
-        info.ip = ip;
-        info.hostname = host;
-        info.lastMessage = msg;
-        info.lastSeen = std::chrono::steady_clock::now();
+    DeviceInfo info;
+    info.ip = ip;
+    info.hostname = host;
+    info.lastMessage = code;
+    info.lastSeen = std::chrono::steady_clock::now();
 
         {
             std::lock_guard<std::mutex> lock(devices_mutex_);
             devices_[ip] = info;
         }
 
-        std::cout << "[RECV] " << msg << " from " << ip
-                  << " (" << host << ")" << std::endl;
+    std::cout << "[RECV] code=" << static_cast<int>(code)
+          << " (" << MessageCodec::name_for(code) << ") from " << ip
+          << " (" << host << ")" << std::endl;
     }
 }
 

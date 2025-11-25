@@ -7,9 +7,10 @@
 #include <net/if.h>
 #include <chrono>
 #include <thread>
+#include "MessageCodec.hpp"
 
 SubnetBroadcaster::SubnetBroadcaster(unsigned int interval_ms, uint16_t port)
-    : interval_ms_(interval_ms), port_(port), running_(false), sockfd_(-1) {}
+    : interval_ms_(interval_ms), port_(port), running_(false), sockfd_(-1), alive_msg_(MessageCodec::MSG_ALIVE), shutdown_msg_(MessageCodec::MSG_SHUTDOWN) {}
 
 SubnetBroadcaster::~SubnetBroadcaster() {
     stop();
@@ -52,7 +53,7 @@ bool SubnetBroadcaster::init(const std::string& if_name) {
     return true;
 }
 
-bool SubnetBroadcaster::start(const std::string& alive_msg, const std::string& shutdown_msg) {
+bool SubnetBroadcaster::start(uint8_t alive_msg, uint8_t shutdown_msg) {
     if (sockfd_ < 0) {
         std::cerr << "Socket not initialized. Call init() first.\n";
         return false;
@@ -78,11 +79,12 @@ void SubnetBroadcaster::stop() {
     }
 }
 
-bool SubnetBroadcaster::send_now(const std::string& msg) {
+bool SubnetBroadcaster::send_now(uint8_t code) {
     if (sockfd_ < 0) return false;
-    ssize_t r = sendto(sockfd_, msg.data(), msg.size(), 0,
+    uint8_t buf = code;
+    ssize_t r = sendto(sockfd_, &buf, sizeof(buf), 0,
                        reinterpret_cast<struct sockaddr*>(&dest_), sizeof(dest_));
-    return r == (ssize_t)msg.size();
+    return r == (ssize_t)sizeof(buf);
 }
 
 std::string SubnetBroadcaster::broadcast_address() const { return broadcast_addr_; }
@@ -100,7 +102,8 @@ void SubnetBroadcaster::run_loop() {
             waited += step;
         }
     }
-    if (!shutdown_msg_.empty()) {
+    // send shutdown code if set (0xFF reserved to mean "no shutdown")
+    if (shutdown_msg_ != 0xFF) {
         if (!send_now(shutdown_msg_)) {
             std::cerr << "Failed to send shutdown message\n";
         }

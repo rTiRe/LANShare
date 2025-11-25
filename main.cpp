@@ -1,5 +1,6 @@
 #include "SubnetBroadcaster.hpp"
 #include "SubnetListener.hpp"
+#include "MessageCodec.hpp"
 #include <iostream>
 #include <thread>
 #include <csignal>
@@ -35,7 +36,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, sigint_handler);
     std::signal(SIGTERM, sigint_handler);
 
-    bc.start("device_alive", "device_shutdown");
+    bc.start(MessageCodec::MSG_ALIVE, MessageCodec::MSG_SHUTDOWN);
 
     std::cout << "Broadcasting and listening on port 40000.\n";
 
@@ -44,8 +45,8 @@ int main(int argc, char* argv[]) {
         auto devices = listener.get_devices();
         std::cout << "\n--- Active devices ---\n";
         for (const auto& [ip, info] : devices) {
-            std::cout << info.ip << " (" << info.hostname
-                      << ") - last message: " << info.lastMessage << std::endl;
+            std::cout << info.ip << " (" << info.hostname << ") - last message: code="
+                      << static_cast<int>(info.lastMessage) << " (" << MessageCodec::name_for(info.lastMessage) << ")" << std::endl;
         }
     }
 }

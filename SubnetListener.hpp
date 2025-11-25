@@ -2,6 +2,8 @@
 #define SUBNET_LISTENER_HPP
 
 #include <string>
+#include <cstdint>
+#include "MessageCodec.hpp"
 #include <unordered_map>
 #include <thread>
 #include <atomic>
@@ -11,7 +13,7 @@
 struct DeviceInfo {
     std::string ip;
     std::string hostname;
-    std::string lastMessage;
+    uint8_t lastMessage;
     std::chrono::steady_clock::time_point lastSeen;
 };
 

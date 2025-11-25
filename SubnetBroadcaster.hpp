@@ -4,6 +4,7 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 #include <netinet/in.h>
 
 class SubnetBroadcaster {
@@ -12,9 +13,9 @@ public:
     ~SubnetBroadcaster();
 
     bool init(const std::string& if_name = "");
-    bool start(const std::string& alive_msg = "alive", const std::string& shutdown_msg = "shutdown");
+    bool start(uint8_t alive_code = 1, uint8_t shutdown_code = 0);
     void stop();
-    bool send_now(const std::string& msg);
+    bool send_now(uint8_t code);
 
     std::string broadcast_address() const;
     uint16_t port() const;
@@ -23,8 +24,8 @@ private:
     unsigned int interval_ms_;
     uint16_t port_;
     std::string broadcast_addr_;
-    std::string alive_msg_;
-    std::string shutdown_msg_;
+    uint8_t alive_msg_;
+    uint8_t shutdown_msg_;
     int sockfd_;
     struct sockaddr_in dest_;
     std::atomic<bool> running_;
