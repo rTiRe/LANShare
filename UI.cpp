@@ -41,7 +41,7 @@ void UI::draw() {
         mvprintw(prow + i, 0, "%2zu) %s  %s  [%s]", i + 1, p->peer_ip.c_str(), p->filename.c_str(), state);
     }
 
-    mvprintw(LINES - 2, 0, "Commands: q=quit, s=send file, 1/2/... accept pending request, a<num>=accept, r<num>=reject, x=reject all");
+    mvprintw(LINES - 2, 0, "Commands: q=quit, s=send file, a=accept first, r=reject first, P=operate on index (+n/-n), x=reject all");
     refresh();
 }
 
@@ -98,41 +98,45 @@ void UI::handle_input() {
         return;
     }
 
-    // numeric keys to accept pending requests (1-based index)
-    if (ch >= '1' && ch <= '9') {
-        int idx = ch - '1';
+    // accept first pending
+    if (ch == 'a' || ch == 'A') {
         auto pending = ft_.get_pending_requests();
-        if ((size_t)idx < pending.size()) {
-            auto p = pending[idx];
-            ft_.decide_request(p->peer_ip, p->filename, true);
+        if (!pending.empty()) {
+            auto p = pending.front();
+            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, true);
         }
         return;
     }
 
-    // accept/reject with multi-digit index: 'a' or 'r' followed by number and Enter
-    static std::string numbuf;
-    if (ch == 'a' || ch == 'r') {
-        numbuf.clear();
+    // reject first pending
+    if (ch == 'r' || ch == 'R') {
+        auto pending = ft_.get_pending_requests();
+        if (!pending.empty()) {
+            auto p = pending.front();
+            if (p->decision.load() == -1) ft_.decide_request(p->peer_ip, p->filename, false);
+        }
+        return;
+    }
+
+    // uppercase 'P' opens prompt to accept/reject a specific index (multi-digit)
+    if (ch == 'P') {
+        std::string numbuf;
         nodelay(stdscr, FALSE);
         echo();
-        mvprintw(LINES - 4, 0, "Enter index to %s: ", (ch == 'a') ? "accept" : "reject");
-        int c;
-        // read digits until newline
-        while ((c = getch()) != '\n' && c != ERR) {
-            if (c >= '0' && c <= '9') {
-                numbuf.push_back((char)c);
-                addch(c);
-                refresh();
-            }
-        }
+        mvprintw(LINES - 4, 0, "Enter index to act on (prefix + to accept, - to reject), e.g. +12 or -3: ");
+        char input[64] = {0};
+        getnstr(input, sizeof(input) - 1);
         noecho();
         nodelay(stdscr, TRUE);
-        if (!numbuf.empty()) {
-            int idx = std::stoi(numbuf) - 1;
+        std::string s = input;
+        if (!s.empty()) {
+            bool accept = s[0] == '+';
+            size_t pos = (s[0] == '+' || s[0] == '-') ? 1 : 0;
+            int idx = std::stoi(s.substr(pos)) - 1;
             auto pending = ft_.get_pending_requests();
             if (idx >= 0 && (size_t)idx < pending.size()) {
                 auto p = pending[idx];
-                ft_.decide_request(p->peer_ip, p->filename, ch == 'a');
+                ft_.decide_request(p->peer_ip, p->filename, accept);
             }
         }
         return;
