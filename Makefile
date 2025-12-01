@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -O2 -Wall -pthread
+CXXFLAGS = -std=c++17 -O2 -Wall -pthread -fPIC
 OBJS = main.o SubnetBroadcaster.o SubnetListener.o FileTransfer.o UI.o UIQt.o
 TARGET = netdemo
 
