@@ -7,6 +7,10 @@
 #include <QHeaderView>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <ifaddrs.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <set>
 
 UIQt::UIQt(SubnetListener& listener, FileTransfer& ft, SubnetBroadcaster& bc, QWidget* parent)
     : QMainWindow(parent), listener_(listener), ft_(ft), bc_(bc) {
@@ -65,13 +69,26 @@ void UIQt::buildUi() {
         if (ip.isEmpty()) return;
         QString path = QFileDialog::getOpenFileName(this, "Select file to send");
         if (path.isEmpty()) return;
-        bool ok = ft_.request_send(ip.toStdString(), ft_.control_port(), path.toStdString(), 30000);
-        if (!ok) {
-            QMessageBox::warning(this, "Request", "Denied or timed out");
-            return;
-        }
-        bool sent = ft_.send_file(ip.toStdString(), ft_.listen_port(), path.toStdString());
-        if (!sent) QMessageBox::warning(this, "Send", "Send failed");
+        // run request+send in background to avoid blocking GUI
+        std::thread([this, ip, path]() {
+            bool ok = ft_.request_send(ip.toStdString(), ft_.control_port(), path.toStdString(), 30000);
+            if (!ok) {
+                QMetaObject::invokeMethod(this, [this]() {
+                    QMessageBox::warning(this, "Request", "Denied or timed out");
+                }, Qt::QueuedConnection);
+                return;
+            }
+            bool sent = ft_.send_file(ip.toStdString(), ft_.listen_port(), path.toStdString());
+            if (!sent) {
+                QMetaObject::invokeMethod(this, [this]() {
+                    QMessageBox::warning(this, "Send", "Send failed");
+                }, Qt::QueuedConnection);
+            } else {
+                QMetaObject::invokeMethod(this, [this]() {
+                    QMessageBox::information(this, "Send", "Send complete");
+                }, Qt::QueuedConnection);
+            }
+        }).detach();
     });
 }
 
@@ -82,9 +99,26 @@ int UIQt::firstUndecidedIndex(const std::vector<std::shared_ptr<PendingRequest>>
 
 void UIQt::refresh() {
     auto devices = listener_.get_devices();
+    // collect local IPv4 addresses to filter out
+    std::set<std::string> local_ips;
+    struct ifaddrs* ifa = nullptr;
+    if (getifaddrs(&ifa) == 0) {
+        for (struct ifaddrs* it = ifa; it; it = it->ifa_next) {
+            if (!it->ifa_addr) continue;
+            if (it->ifa_addr->sa_family != AF_INET) continue;
+            char buf[INET_ADDRSTRLEN];
+            struct sockaddr_in* sin = reinterpret_cast<struct sockaddr_in*>(it->ifa_addr);
+            if (inet_ntop(AF_INET, &sin->sin_addr, buf, sizeof(buf))) {
+                local_ips.insert(buf);
+            }
+        }
+        freeifaddrs(ifa);
+    }
+
     devicesTable_->setRowCount(0);
     int r = 0;
     for (const auto& [ip, info] : devices) {
+        if (local_ips.count(ip)) continue; // skip self
         devicesTable_->insertRow(r);
         devicesTable_->setItem(r, 0, new QTableWidgetItem(QString::fromStdString(ip)));
         devicesTable_->setItem(r, 1, new QTableWidgetItem(QString::fromStdString(info.hostname)));
