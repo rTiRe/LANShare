@@ -3,6 +3,8 @@
 #include "MessageCodec.hpp"
 #include "FileTransfer.hpp"
 #include "UI.hpp"
+#include "UIQt.hpp"
+#include <QApplication>
 #include <iostream>
 #include <thread>
 #include <csignal>
@@ -49,12 +51,25 @@ int main(int argc, char* argv[]) {
     bc.start(MessageCodec::MSG_ALIVE, MessageCodec::MSG_SHUTDOWN);
 
     std::cout << "Broadcasting and listening on port 40000. Starting UI...\n";
-    // start ncurses UI
-    UI ui(listener, ft, bc);
-    if (!ui.init()) {
-        std::cerr << "UI init failed, falling back to console mode\n";
-    } else {
-        ui.run();
+    // Try Qt UI first
+    bool qtStarted = false;
+    try {
+        QApplication app(argc, argv);
+        qtStarted = true;
+        UIQt w(listener, ft, bc);
+        w.show();
+        app.exec();
+    } catch (...) {
+        qtStarted = false;
+    }
+    if (!qtStarted) {
+        // fallback to ncurses UI
+        UI ui(listener, ft, bc);
+        if (!ui.init()) {
+            std::cerr << "UI init failed, falling back to console mode\n";
+        } else {
+            ui.run();
+        }
     }
 
     // if termination requested, attempt to notify peers
